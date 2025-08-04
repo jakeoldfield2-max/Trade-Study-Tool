@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fully Editable Trade Study Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals -->
+    <!-- Application Structure Plan: A single-page dashboard design is used to transform the static trade study into an interactive decision-making tool. The core interaction is a set of sliders for criteria weights, which instantly update a results chart and a recommendation summary. This allows for intuitive sensitivity analysis, helping users understand the trade-offs rather than just reading a static conclusion. Detailed comparison cards are provided for deeper analysis without cluttering the main dashboard. -->
+    <!-- Visualization & Content Choices: Report Info: Criteria Weights -> Goal: Interact -> Viz: HTML Range Sliders -> Interaction: User drag -> Justification: Intuitive control for sensitivity analysis -> Library/Method: HTML/JS. Report Info: Final Scores -> Goal: Compare/Analyze -> Viz: Horizontal Bar Chart -> Interaction: Dynamic updates from sliders -> Justification: Clear comparison of totals, immediate feedback -> Library/Method: Chart.js/Canvas. Report Info: Alternative Details -> Goal: Inform/Organize -> Viz: HTML/Tailwind Cards -> Interaction: Static -> Justification: Provides detailed reference without clutter -> Library/Method: HTML/CSS. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #FDFBF7; color: #333; }
+        .chart-container { position: relative; width: 100%; max-width: 800px; margin-left: auto; margin-right: auto; height: 300px; max-height: 350px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+        .slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; background: #4A5568; cursor: pointer; border-radius: 50%; }
+        .slider::-moz-range-thumb { width: 20px; height: 20px; background: #4A5568; cursor: pointer; border-radius: 50%; }
+        .card { background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 0.75rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03); transition: all 0.2s ease-in-out; }
+        .card-editing { border-color: #60A5FA; box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.3); }
+        .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 500; transition: background-color 0.2s; display: inline-flex; align-items: center; justify-content: center; }
+        .btn-primary { background-color: #3B82F6; color: white; }
+        .btn-primary:hover { background-color: #2563EB; }
+        .btn-secondary { background-color: #6B7280; color: white; }
+        .btn-secondary:hover { background-color: #4B5563; }
+        .btn-danger { background-color: #EF4444; color: white; }
+        .btn-danger:hover { background-color: #DC2626; }
+        .btn-success { background-color: #10B981; color: white; }
+        .btn-success:hover { background-color: #059669; }
+        .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
+        .input-field { width: 100%; padding: 0.5rem; border: 1px solid #D1D5DB; border-radius: 0.375rem; }
+        [contenteditable]:hover { background-color: #F3F4F6; }
+        [contenteditable]:focus { outline: 2px solid #3B82F6; background-color: white; }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <header class="text-center mb-10">
+            <h1 id="trade-study-title" contenteditable="true" class="text-3xl md:text-4xl font-bold text-gray-800 rounded-lg py-1 px-2 transition-colors duration-200"></h1>
+            <p class="text-lg text-gray-600 mt-2">Dynamically add, edit, and evaluate criteria and alternatives.</p>
+            <button id="export-pdf-btn" class="btn btn-success mt-4">Export to PDF</button>
+        </header>
+
+        <main>
+            <section id="alternatives-details" class="mb-12">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-700">1.0 Alternatives Management</h2>
+                    <button id="add-alternative-btn" class="btn btn-primary">+ Add Alternative</button>
+                </div>
+                <div id="alternatives-container" class="grid md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+            </section>
+
+            <section id="criteria-management" class="mb-12">
+                <h2 class="text-2xl font-bold text-gray-700 mb-6 text-center">2.0 Criteria Management</h2>
+                <div class="p-6 bg-white rounded-xl shadow-sm border border-gray-200 max-w-4xl mx-auto">
+                    <div id="criteria-list" class="space-y-3 mb-6"></div>
+                    <div class="flex items-center space-x-4">
+                        <input type="text" id="new-criterion-name" placeholder="New Criterion Name" class="input-field flex-grow">
+                        <button id="add-criterion-btn" class="btn btn-primary">Add Criterion</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="interactive-dashboard" class="mb-12">
+                <h2 class="text-2xl font-bold text-gray-700 mb-6 text-center">3.0 Interactive Analysis</h2>
+                <div class="grid lg:grid-cols-3 gap-8">
+                    <div id="weights-controls" class="lg:col-span-1 p-6 bg-white rounded-xl shadow-sm border border-gray-200">
+                        <h3 class="font-semibold text-xl text-gray-800 mb-4">Criteria Weights</h3>
+                        <div id="sliders-container" class="space-y-5"></div>
+                    </div>
+                    <div class="lg:col-span-2 p-6 bg-white rounded-xl shadow-sm border border-gray-200">
+                        <h3 class="font-semibold text-xl text-gray-800 mb-4 text-center">Weighted Score Results</h3>
+                        <div class="chart-container">
+                            <canvas id="resultsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="recommendation" class="my-12">
+                 <div id="recommendation-box" class="p-6 rounded-xl border-2 border-blue-200 bg-blue-50 text-center transition-all duration-300">
+                    <h2 class="text-xl font-bold text-blue-800 mb-2">Current Recommendation</h2>
+                    <p id="recommendation-text" class="text-lg text-blue-700">Adjust weights to see the top alternative.</p>
+                </div>
+            </section>
+        </main>
+        
+        <footer class="text-center mt-12 pt-6 border-t border-gray-200">
+            <p class="text-sm text-gray-500">University Rocketry Team | Systems Engineering Division</p>
+        </footer>
+    </div>
+
+    <script>
+        const { jsPDF } = window.jspdf;
+
+        let tradeData = {
+            title: 'Fin Material Trade Study',
+            criteria: [
+                { id: 'mass', name: 'Mass', weight: 9 },
+                { id: 'cost', name: 'Cost', weight: 6 },
+                { id: 'manufacturability', name: 'Manufacturability', weight: 8 },
+                { id: 'structural-performance', name: 'Structural Performance', weight: 10 },
+                { id: 'thermal-resistance', name: 'Thermal Resistance', weight: 7 },
+                { id: 'team-experience-risk', name: 'Team Experience/Risk', weight: 5 }
+            ],
+            alternatives: [
+                { 
+                    id: Date.now() + 1, 
+                    name: 'Aluminum 6061-T6',
+                    description: 'A well-understood, isotropic metallic alloy.',
+                    scores: { 'mass': 3, 'cost': 4, 'manufacturability': 5, 'structural-performance': 4, 'thermal-resistance': 5, 'team-experience-risk': 5 },
+                    parameters: { 'Working Time': '4 hours', 'Factor of Safety': '2.0', 'Max Temp': '600°C' },
+                    imageUrl: 'https://placehold.co/600x400/E2E8F0/4A5568?text=Aluminum'
+                },
+                { 
+                    id: Date.now() + 2, 
+                    name: 'Carbon Fibre Composite',
+                    description: 'High-performance composite, complex to manufacture.',
+                    scores: { 'mass': 5, 'cost': 2, 'manufacturability': 1, 'structural-performance': 5, 'thermal-resistance': 3, 'team-experience-risk': 1 },
+                    parameters: { 'Working Time': '20 hours', 'Factor of Safety': '2.8', 'Max Temp': '180°C (Tg)' },
+                    imageUrl: 'https://placehold.co/600x400/2D3748/FFFFFF?text=Carbon+Fibre'
+                },
+                { 
+                    id: Date.now() + 3, 
+                    name: 'G10/FR-4 Fibreglass',
+                    description: 'Glass-reinforced epoxy laminate, easy to machine.',
+                    scores: { 'mass': 2, 'cost': 3, 'manufacturability': 5, 'structural-performance': 3, 'thermal-resistance': 2, 'team-experience-risk': 5 },
+                    parameters: { 'Working Time': '5 hours', 'Factor of Safety': '1.6', 'Max Temp': '130°C (Tg)' },
+                    imageUrl: ''
+                }
+            ]
+        };
+
+        let chart;
+
+        const renderCriteriaList = () => {
+            const container = document.getElementById('criteria-list');
+            container.innerHTML = '';
+            if (tradeData.criteria.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center">No criteria defined. Add one below to get started.</p>';
+                return;
+            }
+            tradeData.criteria.forEach(c => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between p-3 bg-gray-50 rounded-lg';
+                div.innerHTML = `
+                    <span class="font-medium text-gray-700">${c.name}</span>
+                    <button data-id="${c.id}" data-action="delete-criterion" class="btn-danger text-xs px-2 py-1 rounded-md">Delete</button>
+                `;
+                container.appendChild(div);
+            });
+        };
+
+        const renderSliders = () => {
+            const container = document.getElementById('sliders-container');
+            container.innerHTML = '';
+            if (tradeData.criteria.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center">Add criteria to adjust weights.</p>';
+                return;
+            }
+            tradeData.criteria.forEach(c => {
+                const div = document.createElement('div');
+                div.innerHTML = `
+                    <label for="slider-${c.id}" class="flex justify-between items-center text-sm font-medium text-gray-700 mb-1">
+                        <span>${c.name}</span>
+                        <span id="value-${c.id}" class="font-bold text-gray-800 bg-gray-100 px-2 py-0.5 rounded-md">${c.weight}</span>
+                    </label>
+                    <input type="range" id="slider-${c.id}" data-id="${c.id}" min="1" max="10" value="${c.weight}" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider">
+                `;
+                container.appendChild(div);
+            });
+        };
+
+        const renderAlternatives = () => {
+            const container = document.getElementById('alternatives-container');
+            container.innerHTML = '';
+            tradeData.alternatives.forEach(alt => {
+                const card = document.createElement('div');
+                card.className = 'card p-6 flex flex-col';
+                card.id = `alt-${alt.id}`;
+                card.dataset.id = alt.id;
+                container.appendChild(card);
+                renderAlternativeCardContent(alt.id, 'view');
+            });
+        };
+
+        const renderAlternativeCardContent = (altId, mode) => {
+            const alt = tradeData.alternatives.find(a => a.id == altId);
+            const card = document.getElementById(`alt-${altId}`);
+            card.innerHTML = '';
+
+            if (mode === 'view') {
+                card.classList.remove('card-editing');
+                let imageHtml = alt.imageUrl ? `
+                    <div class="mb-4">
+                        <img src="${alt.imageUrl}" alt="${alt.name}" class="rounded-lg object-cover w-full h-40 bg-gray-100" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                        <p class="text-xs text-red-500 mt-1 hidden">Image could not be loaded.</p>
+                    </div>` : '';
+                
+                let paramsHtml = Object.keys(alt.parameters).length > 0 ? `
+                    <h4 class="font-semibold text-gray-700 mt-4 mb-2">Design Parameters:</h4>
+                    <ul class="space-y-1 text-sm">${Object.entries(alt.parameters).map(([key, value]) => `<li class="flex justify-between"><span>${key}:</span><span class="font-medium text-gray-800">${value}</span></li>`).join('')}</ul>
+                ` : '<p class="text-sm text-gray-500 mt-4">No design parameters defined.</p>';
+                
+                let scoresHtml = tradeData.criteria.length > 0 ? `
+                    <h4 class="font-semibold text-gray-700 mt-4 mb-2">Evaluation Scores:</h4>
+                    <ul class="space-y-1 text-sm">${tradeData.criteria.map(c => `<li class="flex justify-between"><span>${c.name}:</span><span class="font-bold">${alt.scores[c.id] || 'N/A'}</span></li>`).join('')}</ul>
+                ` : '<p class="text-sm text-gray-500 mt-4">No criteria defined to show scores.</p>';
+
+                card.innerHTML = `
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">${alt.name}</h3>
+                    <p class="text-gray-600 mb-4">${alt.description}</p>
+                    ${imageHtml}
+                    <div class="flex-grow">
+                        ${paramsHtml}
+                        ${scoresHtml}
+                    </div>
+                    <div class="flex justify-end space-x-2 mt-6">
+                        <button data-action="edit" class="btn btn-secondary btn-sm">Edit</button>
+                        <button data-action="delete-alt" class="btn btn-danger btn-sm">Delete</button>
+                    </div>
+                `;
+            } else { // edit mode
+                card.classList.add('card-editing');
+                let paramsEditHtml = `
+                    <h4 class="font-semibold text-gray-700 mt-4 mb-2">Design Parameters</h4>
+                    <div id="params-edit-container-${alt.id}" class="space-y-2">
+                    ${Object.entries(alt.parameters).map(([key, value]) => `
+                        <div class="flex items-center space-x-2 param-edit-row">
+                            <input type="text" value="${key}" class="input-field text-sm p-1 flex-grow" placeholder="Parameter Name">
+                            <input type="text" value="${value}" class="input-field text-sm p-1 flex-grow" placeholder="Value">
+                            <button data-action="delete-param" class="btn-danger btn-sm p-1">X</button>
+                        </div>
+                    `).join('')}
+                    </div>
+                    <button data-action="add-param" class="btn btn-secondary btn-sm mt-2">+ Add Parameter</button>
+                `;
+
+                let scoresEditHtml = tradeData.criteria.length > 0 ? `
+                    <h4 class="font-semibold text-gray-700 mt-4 mb-2">Evaluation Scores (1-5)</h4>
+                    <div class="grid grid-cols-2 gap-x-4 gap-y-2">
+                    ${tradeData.criteria.map(c => `
+                        <label class="text-sm self-center">${c.name}</label>
+                        <input type="number" data-criterion-id="${c.id}" value="${alt.scores[c.id] || 3}" min="1" max="5" class="input-field text-sm p-1">
+                    `).join('')}
+                    </div>
+                ` : '';
+
+                card.innerHTML = `
+                    <div class="space-y-3">
+                        <div><label class="text-sm font-medium">Name</label><input type="text" id="edit-name-${alt.id}" value="${alt.name}" class="input-field"></div>
+                        <div><label class="text-sm font-medium">Description</label><textarea id="edit-desc-${alt.id}" class="input-field h-20">${alt.description}</textarea></div>
+                        <div><label class="text-sm font-medium">Image URL (Optional)</label><input type="text" id="edit-img-${alt.id}" value="${alt.imageUrl}" class="input-field" placeholder="https://example.com/image.png"></div>
+                        ${paramsEditHtml}
+                        ${scoresEditHtml}
+                    </div>
+                    <div class="flex justify-end space-x-2 mt-6">
+                        <button data-action="save" class="btn btn-primary btn-sm">Save</button>
+                        <button data-action="cancel" class="btn btn-secondary btn-sm">Cancel</button>
+                    </div>
+                `;
+            }
+        };
+        
+        const calculateScores = () => {
+            const currentWeights = {};
+            tradeData.criteria.forEach(c => { currentWeights[c.id] = c.weight; });
+            return tradeData.alternatives.map(alt => {
+                const totalScore = tradeData.criteria.reduce((acc, crit) => acc + ((alt.scores[crit.id] || 0) * currentWeights[crit.id]), 0);
+                return { name: alt.name, score: totalScore };
+            });
+        };
+
+        const updateChart = () => {
+            if (!chart || tradeData.alternatives.length === 0 || tradeData.criteria.length === 0) {
+                const recommendationText = document.getElementById('recommendation-text');
+                recommendationText.textContent = 'Add alternatives and criteria to see results.';
+                if(chart) {
+                    chart.data.labels = [];
+                    chart.data.datasets[0].data = [];
+                    chart.update();
+                }
+                return;
+            }
+            
+            const newScores = calculateScores();
+            chart.data.labels = newScores.map(s => s.name);
+            chart.data.datasets[0].data = newScores.map(s => s.score);
+            chart.data.datasets[0].backgroundColor = newScores.map((_, i) => `hsl(${i * (360 / (newScores.length + 1))}, 70%, 60%)`);
+            chart.update();
+            
+            const sortedScores = [...newScores].sort((a, b) => b.score - a.score);
+            const winner = sortedScores[0];
+            const recommendationText = document.getElementById('recommendation-text');
+            recommendationText.textContent = `Based on the current weights, ${winner.name} is the leading option with a score of ${winner.score}.`;
+        };
+
+        const initChart = () => {
+            const ctx = document.getElementById('resultsChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: { labels: [], datasets: [{ label: 'Total Weighted Score', data: [], borderWidth: 1 }] },
+                options: {
+                    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: { beginAtZero: true, grid: { color: '#E5E7EB' }, ticks: { color: '#4B5563', font: { family: "'Inter', sans-serif" } } },
+                        y: { grid: { display: false }, ticks: { color: '#4B5563', font: { family: "'Inter', sans-serif", size: 14 } } }
+                    },
+                    plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1F2937', titleFont: { size: 14, family: "'Inter', sans-serif" }, bodyFont: { size: 12, family: "'Inter', sans-serif" }, padding: 10, cornerRadius: 4, displayColors: false } }
+                }
+            });
+        };
+        
+        const fullRender = () => {
+            document.getElementById('trade-study-title').textContent = tradeData.title;
+            renderCriteriaList();
+            renderSliders();
+            renderAlternatives();
+            updateChart();
+        };
+
+        const toBase64 = async (url) => {
+            try {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            } catch (error) {
+                console.error("Failed to fetch image for PDF:", error);
+                return null;
+            }
+        };
+
+        const exportToPDF = async () => {
+            const doc = new jsPDF();
+            const finalRecommendation = document.getElementById('recommendation-text').textContent;
+            const exportButton = document.getElementById('export-pdf-btn');
+            exportButton.textContent = 'Generating...';
+            exportButton.disabled = true;
+
+            doc.setFontSize(18);
+            doc.text(tradeData.title, 14, 22);
+            doc.setFontSize(11);
+            doc.setTextColor(100);
+            doc.text(`Report generated on: ${new Date().toLocaleDateString()}`, 14, 29);
+
+            let yPos = 40;
+
+            doc.setFontSize(14);
+            doc.text("1.0 Evaluation Criteria & Weights", 14, yPos);
+            yPos += 7;
+            doc.autoTable({
+                startY: yPos,
+                head: [['Criterion', 'Weight (1-10)']],
+                body: tradeData.criteria.map(c => [c.name, c.weight]),
+                theme: 'striped',
+                headStyles: { fillColor: [41, 128, 185] },
+            });
+            yPos = doc.autoTable.previous.finalY + 15;
+
+            doc.setFontSize(14);
+            doc.text("2.0 Considered Alternatives & Design Parameters", 14, yPos);
+            yPos += 7;
+
+            for (const alt of tradeData.alternatives) {
+                if (yPos > 220) { doc.addPage(); yPos = 20; }
+                
+                doc.setFontSize(12);
+                doc.setTextColor(0);
+                doc.text(alt.name, 14, yPos);
+                yPos += 6;
+
+                if (alt.imageUrl) {
+                    const imgData = await toBase64(alt.imageUrl);
+                    if (imgData) {
+                        try {
+                            const imgProps = doc.getImageProperties(imgData);
+                            const imgHeight = (imgProps.height * 40) / imgProps.width;
+                            if (yPos + imgHeight > 280) { doc.addPage(); yPos = 20; }
+                            doc.addImage(imgData, imgProps.fileType, 14, yPos, 40, imgHeight);
+                            yPos += imgHeight + 5;
+                        } catch(e) { console.error("Error adding image to PDF:", e); }
+                    }
+                }
+
+                if (Object.keys(alt.parameters).length > 0) {
+                    doc.autoTable({
+                        startY: yPos,
+                        head: [['Parameter', 'Value']],
+                        body: Object.entries(alt.parameters),
+                        theme: 'grid', margin: { left: 14 }, tableWidth: 'auto',
+                        styles: { fontSize: 9 }, headStyles: { fillColor: [108, 122, 137] }
+                    });
+                    yPos = doc.autoTable.previous.finalY + 10;
+                } else {
+                    doc.setFontSize(10);
+                    doc.setTextColor(150);
+                    doc.text("No design parameters defined.", 14, yPos);
+                    yPos += 10;
+                }
+            }
+
+            if (yPos > 240) { doc.addPage(); yPos = 20; }
+            yPos += 5;
+            doc.setFontSize(14);
+            doc.setTextColor(0);
+            doc.text("3.0 Scoring Matrix", 14, yPos);
+            yPos += 7;
+            const scoreHead = ['Alternative', ...tradeData.criteria.map(c => c.name)];
+            const scoreBody = tradeData.alternatives.map(alt => [alt.name, ...tradeData.criteria.map(c => alt.scores[c.id] || 'N/A')]);
+            doc.autoTable({ startY: yPos, head: [scoreHead], body: scoreBody, theme: 'striped', headStyles: { fillColor: [41, 128, 185] } });
+            yPos = doc.autoTable.previous.finalY + 15;
+
+            if (yPos > 240) { doc.addPage(); yPos = 20; }
+            doc.setFontSize(14);
+            doc.text("4.0 Results & Recommendation", 14, yPos);
+            yPos += 7;
+            const finalScores = calculateScores();
+            doc.autoTable({ startY: yPos, head: [['Alternative', 'Final Weighted Score']], body: finalScores.map(s => [s.name, s.score.toFixed(2)]), theme: 'grid', headStyles: { fillColor: [22, 160, 133] } });
+            yPos = doc.autoTable.previous.finalY + 10;
+
+            doc.setFontSize(12);
+            doc.setTextColor(0);
+            doc.text("Recommendation:", 14, yPos);
+            yPos += 6;
+            doc.setFontSize(11);
+            doc.setTextColor(100);
+            doc.text(finalRecommendation, 14, yPos, { maxWidth: 180 });
+
+            doc.save(`${tradeData.title.replace(/\s+/g, '_')}_Summary.pdf`);
+            exportButton.textContent = 'Export to PDF';
+            exportButton.disabled = false;
+        };
+
+        document.getElementById('add-criterion-btn').addEventListener('click', () => {
+            const nameInput = document.getElementById('new-criterion-name');
+            const name = nameInput.value.trim();
+            if (name) {
+                const newCriterion = { id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name: name, weight: 5 };
+                tradeData.criteria.push(newCriterion);
+                tradeData.alternatives.forEach(alt => { alt.scores[newCriterion.id] = 3; });
+                nameInput.value = '';
+                fullRender();
+            }
+        });
+
+        document.getElementById('criteria-list').addEventListener('click', (e) => {
+            if (e.target.dataset.action === 'delete-criterion') {
+                const criterionId = e.target.dataset.id;
+                tradeData.criteria = tradeData.criteria.filter(c => c.id !== criterionId);
+                tradeData.alternatives.forEach(alt => { delete alt.scores[criterionId]; });
+                fullRender();
+            }
+        });
+
+        document.getElementById('weights-controls').addEventListener('input', (e) => {
+            if (e.target.classList.contains('slider')) {
+                const criterionId = e.target.dataset.id;
+                const weight = parseInt(e.target.value, 10);
+                document.getElementById(`value-${criterionId}`).textContent = weight;
+                const criterion = tradeData.criteria.find(c => c.id === criterionId);
+                criterion.weight = weight;
+                updateChart();
+            }
+        });
+
+        document.getElementById('add-alternative-btn').addEventListener('click', () => {
+            const newId = Date.now();
+            const newAlternative = {
+                id: newId, name: 'New Alternative', description: 'Please provide a description.',
+                scores: {}, parameters: { 'New Parameter': 'Value' }, imageUrl: ''
+            };
+            tradeData.criteria.forEach(c => { newAlternative.scores[c.id] = 3; });
+            tradeData.alternatives.push(newAlternative);
+            renderAlternatives();
+            renderAlternativeCardContent(newId, 'edit');
+            document.getElementById(`alt-${newId}`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+
+        document.getElementById('alternatives-container').addEventListener('click', (e) => {
+            if (e.target.tagName !== 'BUTTON') return;
+            
+            const button = e.target;
+            const card = button.closest('.card');
+            const altId = card.dataset.id;
+            const action = button.dataset.action;
+
+            if (action === 'edit') { renderAlternativeCardContent(altId, 'edit'); } 
+            else if (action === 'cancel') { renderAlternativeCardContent(altId, 'view'); } 
+            else if (action === 'delete-alt') {
+                tradeData.alternatives = tradeData.alternatives.filter(a => a.id != altId);
+                fullRender();
+            } else if (action === 'save') {
+                const alt = tradeData.alternatives.find(a => a.id == altId);
+                alt.name = document.getElementById(`edit-name-${altId}`).value;
+                alt.description = document.getElementById(`edit-desc-${altId}`).value;
+                alt.imageUrl = document.getElementById(`edit-img-${altId}`).value.trim();
+                
+                alt.parameters = {};
+                card.querySelectorAll('.param-edit-row').forEach(row => {
+                    const key = row.children[0].value.trim();
+                    const value = row.children[1].value.trim();
+                    if (key) alt.parameters[key] = value;
+                });
+
+                card.querySelectorAll('input[type="number"]').forEach(input => {
+                    alt.scores[input.dataset.criterionId] = parseInt(input.value, 10);
+                });
+                renderAlternativeCardContent(altId, 'view');
+                updateChart();
+            } else if (action === 'add-param') {
+                const container = document.getElementById(`params-edit-container-${altId}`);
+                const newRow = document.createElement('div');
+                newRow.className = 'flex items-center space-x-2 param-edit-row';
+                newRow.innerHTML = `
+                    <input type="text" class="input-field text-sm p-1 flex-grow" placeholder="Parameter Name">
+                    <input type="text" class="input-field text-sm p-1 flex-grow" placeholder="Value">
+                    <button data-action="delete-param" class="btn-danger btn-sm p-1">X</button>
+                `;
+                container.appendChild(newRow);
+            } else if (action === 'delete-param') {
+                button.parentElement.remove();
+            }
+        });
+
+        document.getElementById('export-pdf-btn').addEventListener('click', exportToPDF);
+        
+        document.getElementById('trade-study-title').addEventListener('blur', (e) => {
+            tradeData.title = e.target.textContent;
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initChart();
+            fullRender();
+        });
+    </script>
+</body>
+</html>
